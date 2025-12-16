@@ -18,17 +18,20 @@
 环境准备
 确保你的电脑安装了以下软件：
 Python 3.8 或更高版本
-Node.js 
-Git: 下载地址 (用于代码同步)
-VS Code (推荐): 建议安装 Vetur 或 Vue - Official 插件，以及 Python 插件。
+Node.js   
+Git: (用于代码同步)
+VS Code : 建议安装 Vetur 或 Vue - Official 插件，以及 Python 插件。
+
 二、
 项目下载与安装 (部署到本地)
 1. 克隆项目代码
 https://github.com/terriyyy/Python-project-based-on-MediaPipe.git
-2. 后端环境配置 (Backend)
+
+3. 后端环境配置 (Backend)
 
 后端负责运行 Python 逻辑和处理摄像头画面。
 
+新建终端 进入后端
 cd backend
 
 1. 创建虚拟环境
@@ -61,10 +64,10 @@ npm install
 
 开发时需要同时启动两个终端窗口。
 
-
 终端 1：启动后端
 确保已激活虚拟环境 (venv)：
 cd backend
+
 python main.py
 
 Uvicorn running on http://0.0.0.0:8000 时，后端启动成功。
@@ -72,6 +75,7 @@ Uvicorn running on http://0.0.0.0:8000 时，后端启动成功。
 
 终端 2：启动前端
 npm run serve
+
 App running at: http://localhost:8080/ 时，前端启动成功。
 
 打开浏览器访问 http://localhost:8080 即可看到项目首页。
@@ -83,7 +87,7 @@ App running at: http://localhost:8080/ 时，前端启动成功。
 
 
 (如何添加游戏)
-
+我加了一个简单的示例项目可以参考一下
 无需修改 main.py 或前端代码。
 目录结构
 代码应该放在 backend/games/ 下的一个独立文件夹中。假设你的游戏叫 game_face：
@@ -131,9 +135,9 @@ backend/games/game_face/  <-- 你的文件夹
 不能使用 cv2.imshow 和 cv2.waitKey
 代码运行在服务器上，弹窗会导致服务器卡死。
 推荐写法 (适配器模式)：
-写你自己的逻辑 (core.py)：
+写你自己的逻辑 (core.py)：左右
 只要定义一个 process(image) 函数，输入图片，返回画好线的图片即可。
-
+注意：由于是转化图片流，因此摄像头会延迟0.5s
 
 # backend/games/game_face/core.py
 import cv2
