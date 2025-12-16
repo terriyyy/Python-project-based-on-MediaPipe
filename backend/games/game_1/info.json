@@ -1,6 +1,6 @@
 {
   "id": "game_1",
-  "title": "我的第一个CV游戏",
+  "title": "test",
   "description": "测试摄像头画面传输",
   "cover": "http://localhost:8000/static/demo.jpg",
   "author": "Python小组",
