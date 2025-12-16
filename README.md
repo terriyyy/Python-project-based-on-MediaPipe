@@ -16,10 +16,7 @@ VS Code (推荐): 建议安装 Vetur 或 Vue - Official 插件，以及 Python �
 二、
 项目下载与安装 (部署到本地)
 1. 克隆项目代码
-打开终端 (CMD / PowerShell / Git Bash)，运行以下命令将代码下载到本地：
-git clone https://github.com/YourName/python-group-work.git
-
-cd python-group-work
+https://github.com/terriyyy/Python-project-based-on-MediaPipe.git
 2. 后端环境配置 (Backend)
 
 后端负责运行 Python 逻辑和处理摄像头画面。
@@ -31,8 +28,7 @@ Windows:
 python -m venv venv
 Mac/Linux:
 python3 -m venv venv
-
-2. 激活虚拟环境 （激活后终端前会有 (venv) 标志)
+2. 激活虚拟环境
 Windows PowerShell:
 .\venv\Scripts\Activate
 Windows CMD:
@@ -46,11 +42,12 @@ pip install -r requirements.txt
 
 前端负责展示网页界面。
 
-# 新开一个终端窗口 (保持后端终端不动)
+新开一个终端窗口 (保持后端终端不动)
 cd frontend
 
-# 安装前端依赖 
+安装前端依赖 
 npm install
+===============================================
 启动项目
 
 开发时需要同时启动两个终端窗口。
@@ -70,13 +67,10 @@ App running at: http://localhost:8080/ 时，前端启动成功。
 
 核心架构说明
 前端 (Vue)：不需要修改，自动向后端询问，动态生成卡片。
-
 后端 (FastAPI)：会自动扫描 backend/games/ 文件夹。
-
 视频流原理：后端将 Python 处理好的每一帧图片转换成 JPG 数据流 (MJPEG)，前端通过 <img src="..."> 标签直接播放，无需复杂的 WebSocket。
-
 ----------------------------------------------------------------------------------------------------------------------
-(如何添加你的游戏)
+(如何添加游戏)
 
 按照以下规范提交代码，不要修改 main.py 或前端代码。
 目录结构规范
@@ -102,7 +96,7 @@ backend/games/game_face/  <-- 你的文件夹 (必须英文)
   "route": "/game/game_face"
 }
 
-注意：id 必须和文件夹名字一致！route 必须是 /game/文件夹名。
+注意：id 必须和文件夹名字一致route 必须是 /game/文件夹名。
 
 封面图：如果想用自己的图，把图片放入 backend/static/，然后修改 cover 字段。
 
