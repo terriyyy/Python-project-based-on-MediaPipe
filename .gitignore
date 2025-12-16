@@ -1,0 +1,38 @@
+# 字节码文件
+__pycache__/
+*.pyc
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+
+# Python 常用库和分发文件
+build/
+dist/
+wheels/
+.pytest_cache/
+
+# 前端/Node.js 忽略规则
+# 依赖库 
+node_modules/
+
+# 构建输出
+dist/
+build/
+.output/
+
+# 日志
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 系统和编辑器 忽略规则
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
