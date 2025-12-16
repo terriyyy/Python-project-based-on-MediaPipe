@@ -1,11 +1,19 @@
 基于 FastAPI (后端) 和 Vue 3 (前端) 的前后端分离项目。
+
 目录
+
 环境准备
+
 项目下载与安装
+
 启动项目
+
 核心架构说明
+
 (如何添加你的游戏)
+
 常见问题 (Troubleshooting)
+
 一、
 环境准备
 确保你的电脑安装了以下软件：
@@ -47,18 +55,21 @@ cd frontend
 
 安装前端依赖 
 npm install
-===============================================
+
+
 启动项目
 
 开发时需要同时启动两个终端窗口。
--------------------------------------------------
+
+
 终端 1：启动后端
 确保已激活虚拟环境 (venv)：
 cd backend
 python main.py
 
 Uvicorn running on http://0.0.0.0:8000 时，后端启动成功。
-------------------------------------------------------
+
+
 终端 2：启动前端
 npm run serve
 App running at: http://localhost:8080/ 时，前端启动成功。
@@ -69,36 +80,52 @@ App running at: http://localhost:8080/ 时，前端启动成功。
 前端 (Vue)：不需要修改，自动向后端询问，动态生成卡片。
 后端 (FastAPI)：会自动扫描 backend/games/ 文件夹。
 视频流原理：后端将 Python 处理好的每一帧图片转换成 JPG 数据流 (MJPEG)，前端通过 <img src="..."> 标签直接播放，无需复杂的 WebSocket。
-----------------------------------------------------------------------------------------------------------------------
+
+
 (如何添加游戏)
 
-按照以下规范提交代码，不要修改 main.py 或前端代码。
-目录结构规范
+无需修改 main.py 或前端代码。
+目录结构
 代码应该放在 backend/games/ 下的一个独立文件夹中。假设你的游戏叫 game_face：
 
-backend/games/game_face/  <-- 你的文件夹 (必须英文)
-├── __init__.py           <-- 空文件 (必须有)
-├── info.json             <-- 游戏身份证 (必须有)
-├── logic.py              <-- 接口文件 (必须有)
-├── core.py               <-- (可选) 你的核心算法逻辑
-└── utils.py              <-- (可选) 你的工具函数
+backend/games/game_face/  <-- 你的文件夹 
+
+├── __init__.py           <-- 空文件 (必须)
+
+├── info.json             <-- 游戏身份证 (必须)
+
+├── logic.py              <-- 接口文件 (必须)
+
+├── core.py               <-- (可选) 核心算法逻辑
+
+└── utils.py              <-- (可选) 工具函数
 
 步骤 1：新建文件夹
+
 在 backend/games/ 下新建你的文件夹，例如 game_face。并在里面新建一个空的 __init__.py。
+
 步骤 2：创建 info.json
+
 这是前端生成卡片的依据。请复制以下内容并修改：
+
 {
   "id": "game_face",
+  
   "title": "xxx",
+  
   "description": "简短介绍...",
+  
   "cover": "http://localhost:8000/static/demo.jpg", 
+  
   "author": "你的名字",
+  
   "route": "/game/game_face"
+  
 }
 
 注意：id 必须和文件夹名字一致route 必须是 /game/文件夹名。
 
-封面图：如果想用自己的图，把图片放入 backend/static/，然后修改 cover 字段。
+封面图：把图片放入 backend/static/，然后修改 cover 字段。
 
 步骤 3：编写代码 
 不能使用 cv2.imshow 和 cv2.waitKey
@@ -156,14 +183,25 @@ def game_logic():
     cap.release()
 步骤 4：测试运行
 重启后端终端 (Ctrl+C 停止，再 python main.py)。刷新前端网页，游戏卡片就会自动出现
+
 常见问题 (Troubleshooting)
+
 Q1: 运行 pip install 报错
+
 检查: 是否激活了虚拟环境 (venv)
+
 解决: 尝试升级 pip: python -m pip install --upgrade pip，或者使用镜像源: pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
 Q2: 网页显示“游戏画面加载中...”但一直没有画面？
+
 检查 1: 查看后端终端是否有报错（红色文字）。
+
 检查 2: 文件名是否正确？比如代码里引用 utils 但文件名是 utitls。
+
 检查 3: 摄像头是否被其他程序占用
+
 解决: 尝试在 logic.py 中将 cv2.VideoCapture(0) 改为 cv2.VideoCapture(0, cv2.CAP_DSHOW)。
+
 Q3: 修改了 info.json 没变化
+
 解决: 后端只在启动时扫描一次文件。修改配置文件或添加新游戏后，必须重启后端服务。注意修改后端文件的话，一定要重启后端服务
