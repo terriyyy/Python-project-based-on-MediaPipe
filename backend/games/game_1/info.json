@@ -1,8 +1,0 @@
-{
-  "id": "game_1",
-  "title": "test",
-  "description": "测试摄像头画面传输",
-  "cover": "http://localhost:8000/static/demo.jpg",
-  "author": "Python小组",
-  "route": "/game/game_1"
-}
