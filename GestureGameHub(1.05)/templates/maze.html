@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧩 迷宫寻路 - 手势识别中...</title>
+    <!-- 引入 Bootstrap 和 FontAwesome (用于图标) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        /* --- 整体风格定义 --- */
+        body {
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 导航栏 */
+        .navbar-custom {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid #444;
+        }
+
+        /* 游戏屏幕容器 */
+        .game-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            flex-grow: 1;
+        }
+
+        /* 核心：视频流边框特效 */
+        .screen-frame {
+            position: relative;
+            padding: 10px;
+            background: #000;
+            border-radius: 15px;
+            /* 蓝色霓虹呼吸灯效果 */
+            box-shadow: 0 0 20px rgba(0, 191, 255, 0.5), 
+                        0 0 40px rgba(0, 191, 255, 0.3);
+            border: 2px solid #00bfff;
+        }
+
+        /* 视频标签 */
+        .game-feed {
+            display: block;
+            border-radius: 5px;
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* 装饰性：屏幕上方的文字 */
+        .hud-header {
+            display: flex;
+            justify-content: space-between;
+            color: #00bfff;
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* 底部操作面板 */
+        .control-panel {
+            background: rgba(255, 255, 255, 0.1);
+            margin: 20px auto;
+            border-radius: 15px;
+            padding: 20px;
+            max-width: 1000px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+        
+        .control-item {
+            text-align: center;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        .control-item:hover { opacity: 1; }
+        .control-item i { font-size: 2rem; margin-bottom: 10px; color: #ffeb3b; }
+        .key-badge {
+            background: #333;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            font-size: 0.8rem;
+        }
+        /* 新增：游戏开始前的遮罩层 */
+        #game-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 12, 41, 0.9); /* 深色半透明背景 */
+            backdrop-filter: blur(8px); /* 毛玻璃效果 */
+            z-index: 1000; /* 保证在最上层 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px; /* 和 screen-frame 匹配 */
+        }
+
+        .instruction-card {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #00bfff;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 600px;
+            box-shadow: 0 0 50px rgba(0, 191, 255, 0.2);
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .start-btn {
+            background: linear-gradient(45deg, #00bfff, #2050ff);
+            border: none;
+            padding: 15px 50px;
+            font-size: 1.5rem;
+            color: white;
+            border-radius: 50px;
+            margin-top: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 2px;
+            box-shadow: 0 0 20px rgba(0, 191, 255, 0.5);
+        }
+
+        .start-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 40px rgba(0, 191, 255, 0.8);
+        }
+        
+        /* 确保 screen-frame 是定位基准 */
+        .screen-frame {
+            position: relative; 
+            overflow: hidden; /* 防止遮罩溢出 */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <nav class="navbar navbar-custom navbar-dark">
+        <div class="container-fluid">
+            <a class="btn btn-outline-info btn-sm" href="/">
+                <i class="fas fa-arrow-left"></i> 退出游戏
+            </a>
+            <span class="navbar-brand mb-0 h1 mx-auto">
+                <i class="fas fa-microchip"></i> NEURAL MAZE <small style="font-size: 0.6em; color: #aaa;">ver 1.0</small>
+            </span>
+            <div style="width: 80px;"></div> <!-- 占位符保持居中 -->
+        </div>
+    </nav>
+
+    <!-- 主游戏区 -->
+    <div class="game-container">
+        <div class="screen-frame">
+
+            <!-- 新增：遮罩层 (放在 img 标签后面，但在 div 内部) -->
+            <div id="game-overlay">
+                <div class="instruction-card">
+                    <h1 style="color: #00bfff; margin-bottom: 20px;">MISSION BRIEFING</h1>
+                    
+                    <div class="row text-start mt-4">
+                        <div class="col-6">
+                            <h5><i class="fas fa-hand-paper text-warning"></i> 手势识别</h5>
+                            <p class="small text-muted">请确保环境光线充足，正对摄像头。伸出食指进行控制。</p>
+                        </div>
+                        <div class="col-6">
+                            <h5><i class="fas fa-bullseye text-danger"></i> 目标</h5>
+                            <p class="small text-muted">控制绿色光点，避开墙壁，移动到红色终点。</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-center gap-3">
+                            <span class="badge bg-secondary p-2">Total Levels: 15</span>
+                            <span class="badge bg-secondary p-2">Move Delay: 0.5s</span>
+                        </div>
+                    </div>
+
+                    <button class="start-btn" onclick="startGame()">
+                        <i class="fas fa-play"></i> START GAME
+                    </button>
+                </div>
+            </div>
+
+            <!-- 装饰文字 HUD -->
+            <div class="hud-header">
+                <span>System: Online</span>
+                <span>Cam: Active</span>
+                <span>Mode: Gesture</span>
+            </div>
+            
+            <!-- 这里的 src 依然指向 Flask 的视频流 -->
+            <img src="{{ url_for('video_feed') }}" class="game-feed" width="1080" alt="Game Stream">
+            
+            <div class="text-center mt-2 text-muted" style="font-size: 0.7rem;">
+                Powered by MediaPipe & OpenCV
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部说明栏 -->
+    <div class="container pb-4">
+        <div class="control-panel">
+            <div class="control-item">
+                <i class="fas fa-hand-point-up"></i>
+                <h5>手势控制</h5>
+                <p class="small">伸出食指，指向上下左右</p>
+            </div>
+            <div class="control-item">
+                <i class="fas fa-stopwatch"></i>
+                <h5>移动机制</h5>
+                <p class="small">每 0.5秒 移动一格<br>保持手势直到移动</p>
+            </div>
+            <div class="control-item">
+                <i class="fas fa-flag-checkered"></i>
+                <h5>胜利条件</h5>
+                <p class="small">抵达<span style="color:red">●</span> 终点<br>共 15 个关卡</p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 新增：JS 脚本控制 -->
+    <script>
+        function startGame() {
+            // 1. 发送请求给后端
+            fetch('/api/start_game', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Game Started:', data);
+                // 2. 隐藏遮罩层
+                const overlay = document.getElementById('game-overlay');
+                overlay.style.opacity = '0'; // 渐隐动画
+                setTimeout(() => {
+                    overlay.style.display = 'none'; // 动画结束后彻底移除
+                }, 500);
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                alert("无法连接到游戏服务器");
+            });
+        }
+    </script>
+
+</body>
+</html>
