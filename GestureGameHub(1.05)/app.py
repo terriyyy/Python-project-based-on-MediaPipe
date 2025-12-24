@@ -15,8 +15,10 @@ def get_game_instance(game_name):
         return ParkourGame()
     elif game_name == 'pacman':
         from games.pacman_adapter import PacmanGameAdapter
-        return PacmanGameAdapter() 
-    # 后续可以在这里添加 'fruit'...
+        return PacmanGameAdapter()
+    elif game_name == 'fruit':
+        from games.fruit_ninja_game import FruitNinjaGame
+        return FruitNinjaGame()
     return None
 
 # 当前运行的游戏实例
@@ -50,12 +52,10 @@ def play(game_name):
         return render_template('maze.html')
     elif game_name == 'parkour':
         return render_template('parkour.html')
-    
     elif game_name == 'pacman':
         return render_template('pacman.html')
-    # 未来扩展：
-    # elif game_name == 'fruit':
-    #     return render_template('fruit.html')
+    elif game_name == 'fruit':
+        return render_template('fruit.html')
         
     # 默认回退到通用模板
     return render_template('game.html', game_name=game_name)

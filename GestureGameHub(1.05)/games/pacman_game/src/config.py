@@ -17,7 +17,7 @@ POWER_SCORE = 50
 EAT_GHOST_BASE = 200
 
 # Game
-START_LIVES = 3
+START_LIVES = 1  # 只有一条命，掉命立即重开
 
 # Debug-friendly safe time
 START_SAFE_TIME = 5.0    # 开局安全期（秒）

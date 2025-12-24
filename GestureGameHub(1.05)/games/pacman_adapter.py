@@ -53,9 +53,32 @@ class PacmanGameAdapter(BaseGame):
         
         # 游戏状态
         self.game_state = "INTRO"
+        self.game_over_timer = 0  # 游戏结束后的计时器
+        self.restart_delay = 3.0  # 游戏结束3秒后可以重启
         
     def start_game(self):
         """前端点击开始按钮时调用"""
+        self.game_state = "PLAYING"
+    
+    def restart_game(self):
+        """重启游戏，重新创建游戏实例"""
+        # 保存当前工作目录
+        original_cwd = os.getcwd()
+        pacman_game_dir = os.path.join(os.path.dirname(__file__), 'pacman_game')
+        os.chdir(pacman_game_dir)
+        try:
+            # 重新创建游戏实例
+            self.pacman_game = PacmanGame()
+            # 重新创建 surface
+            self.game_surface = pygame.Surface((self.pacman_game.width, self.pacman_game.height))
+        finally:
+            # 恢复原工作目录
+            os.chdir(original_cwd)
+        
+        # 重置状态
+        self.game_over_timer = 0
+        self.last_command = "NONE"
+        self.command_cooldown = 0.0
         self.game_state = "PLAYING"
     
     def detect_gesture(self, landmarks):
@@ -114,9 +137,16 @@ class PacmanGameAdapter(BaseGame):
                     self.last_command = command
                     self.command_cooldown = current_time + self.command_interval
             
-            # 更新游戏状态
-            dt = self.clock.tick(FPS) / 1000.0
-            self.pacman_game.update(dt)
+            # 检查是否游戏结束
+            if self.pacman_game.game_over:
+                self.game_over_timer += 1 / FPS
+                # 3秒后自动重启游戏
+                if self.game_over_timer >= self.restart_delay:
+                    self.restart_game()
+            else:
+                # 游戏未结束，正常更新
+                dt = self.clock.tick(FPS) / 1000.0
+                self.pacman_game.update(dt)
             
             # 渲染游戏到 surface
             self.pacman_game.draw(self.game_surface)
@@ -198,8 +228,16 @@ class PacmanGameAdapter(BaseGame):
                 color = (0, 255, 0) if victory else (0, 0, 255)
                 text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_TRIPLEX, 2, 3)[0]
                 text_x = (self.canvas_w - self.sidebar_w - text_size[0]) // 2
-                cv2.putText(canvas, text, (text_x, self.canvas_h // 2), 
+                cv2.putText(canvas, text, (text_x, self.canvas_h // 2 - 50), 
                            cv2.FONT_HERSHEY_TRIPLEX, 2, color, 3)
+                
+                # 显示重启倒计时
+                remaining = max(0, self.restart_delay - self.game_over_timer)
+                restart_text = f"Restarting in {remaining:.1f}s"
+                restart_size = cv2.getTextSize(restart_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+                restart_x = (self.canvas_w - self.sidebar_w - restart_size[0]) // 2
+                cv2.putText(canvas, restart_text, (restart_x, self.canvas_h // 2 + 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         else:
             cv2.putText(canvas, "Use hand gestures", 
                        (sidebar_x + 20, text_y + line_height), font, 0.6, (200, 200, 200), 1)
