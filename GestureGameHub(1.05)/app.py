@@ -19,6 +19,9 @@ def get_game_instance(game_name):
     elif game_name == 'fruit':
         from games.fruit_ninja_game import FruitNinjaGame
         return FruitNinjaGame()
+    elif game_name == 'street_fighter':
+        from games.street_fighter_adapter import StreetFighterAdapter
+        return StreetFighterAdapter()
     return None
 
 # 当前运行的游戏实例
@@ -55,8 +58,9 @@ def play(game_name):
     elif game_name == 'pacman':
         return render_template('pacman.html')
     elif game_name == 'fruit':
-        return render_template('fruit.html')
-        
+        return render_template('fruit.html')   
+    elif game_name == 'street_fighter':
+        return render_template('street_fighter.html')
     # 默认回退到通用模板
     return render_template('game.html', game_name=game_name)
 
