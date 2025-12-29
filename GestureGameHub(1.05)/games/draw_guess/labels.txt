@@ -1,0 +1,10 @@
+apple
+banana
+book
+car
+cat
+clock
+cloud
+face
+flower
+star

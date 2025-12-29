@@ -21,7 +21,10 @@ def get_game_instance(game_name):
         return FruitNinjaGame()
     elif game_name == 'street_fighter':
         from games.street_fighter_adapter import StreetFighterAdapter
-        return StreetFighterAdapter()
+        return StreetFighterAdapter()  
+    elif game_name == 'draw_guess':
+        from games.draw_guess_adapter import DrawGuessAdapter
+        return DrawGuessAdapter()      
     return None
 
 # 当前运行的游戏实例
@@ -32,6 +35,18 @@ def index():
     """主页：游戏大厅"""
     return render_template('index.html')
 
+@app.route('/draw_guess')
+def draw_guess_page():
+    global current_game
+    # 动态加载并初始化
+    from games.draw_guess_adapter import DrawGuessAdapter
+    current_game = DrawGuessAdapter()
+    return render_template('draw_guess.html')
+
+# 你画我猜专属视频流 (为了匹配 draw_guess.html 的 img src)
+@app.route('/video_feed_draw')
+def video_feed_draw():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 # 接收前端“开始游戏”指令的接口
 @app.route('/api/start_game', methods=['POST'])
 def start_game_api():
@@ -61,6 +76,8 @@ def play(game_name):
         return render_template('fruit.html')   
     elif game_name == 'street_fighter':
         return render_template('street_fighter.html')
+    elif game_name == 'draw_guess':
+        return render_template('draw_guess.html')
     # 默认回退到通用模板
     return render_template('game.html', game_name=game_name)
 
