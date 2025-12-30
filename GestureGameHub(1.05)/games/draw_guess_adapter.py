@@ -5,7 +5,10 @@ import torch
 import os
 import math
 import traceback
+import time
+import random
 from collections import deque
+
 # 尝试导入模型
 try:
     from games.draw_guess.cnn_model import DrawCNN
@@ -19,7 +22,7 @@ class DrawGuessAdapter:
         model_path = os.path.join(current_dir, 'draw_guess', 'draw_model.pth')
         label_path = os.path.join(current_dir, 'draw_guess', 'labels.txt')
         
-        # 2. 加载模型
+        # 2. 加载模型和标签
         self.model_loaded = False
         self.labels = []
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -27,24 +30,26 @@ class DrawGuessAdapter:
         if os.path.exists(label_path) and os.path.exists(model_path):
             try:
                 with open(label_path, 'r') as f:
-                    self.labels = f.read().splitlines()
+                    # 读取并过滤空行
+                    self.labels = [line.strip() for line in f.read().splitlines() if line.strip()]
                 if len(self.labels) > 0:
                     self.model = DrawCNN(len(self.labels)).to(self.device)
                     self.model.load_state_dict(torch.load(model_path, map_location=self.device))
                     self.model.eval()
                     self.model_loaded = True
             except Exception as e:
-                print(f"[你画我猜] 加载出错: {e}")
+                print(f">>> [你画我猜] 加载出错: {e}")
+                self.labels = ["apple", "book", "car"] 
         else:
-            print("[你画我猜] 无模型文件")
+            print(">>> [你画我猜] 无模型文件或标签文件")
+            self.labels = ["apple", "book", "car"]
 
         # 3. MediaPipe
         self.mp_hands = mp.solutions.hands
-        # 提高追踪稳定性
         self.hands = self.mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
         self.mp_draw = mp.solutions.drawing_utils
         
-        # 4. 画布设置
+        # 4. 画布设置 (统一标准分辨率)
         self.width = 1280
         self.height = 720
         self.canvas = np.full((self.height, self.width, 3), 255, dtype=np.uint8)
@@ -52,32 +57,33 @@ class DrawGuessAdapter:
         # 5. 笔触与工具变量
         self.xp, self.yp = 0, 0
         self.brush_thickness = 10     
-        self.eraser_thickness = 80    # 橡皮擦直径
-        
-        # 动态平滑变量
+        self.eraser_thickness = 80    
         self.prev_cx, self.prev_cy = 0, 0
-        # ✨ 新增：专门记录橡皮擦(掌心)的位置
         self.eraser_cx, self.eraser_cy = 0, 0 
         self.smooth_factor = 0.5      
         self.prev_thickness = 10      
-        
-        # 历史点队列
         self.points_queue = deque(maxlen=4) 
 
-        # 状态
+        # 6. 游戏状态与UI
         self.prediction = "..."       
         self.status_text = "Ready"    
-        
-        # UI颜色
+        self.frame_count = 0
+
+        # 选题系统变量
+        self.state = 'SELECTING' 
+        self.selection_start_time = time.time()
+        self.selection_duration = 3.0 
+        self.target_topic = random.choice(self.labels) if self.labels else "No Topic"
+        self.current_display_topic = "..." 
+
+        # UI颜色定义
         self.c_ink = (0, 0, 0)
         self.c_eraser = (255, 255, 255)
-        self.c_btn_clear = (255, 80, 80)
-        self.c_btn_text = (255, 255, 255)
-        self.c_panel_bg = (255, 255, 255)
-        self.c_panel_border = (200, 200, 200)
-        self.c_mode_text = (0, 120, 215) 
-        self.c_cursor_hover = (255, 140, 0) # 橙色悬停光标
-        self.c_cursor_eraser = (180, 180, 180) # 灰色橡皮光标
+        self.c_ui_bg = (60, 60, 80)  
+        self.c_ui_border = (100, 100, 140)
+        self.c_text_light = (240, 240, 240)
+        self.c_text_accent = (0, 200, 255) 
+        self.c_btn_clear = (80, 80, 220)
 
     def predict(self):
         if not self.model_loaded: return
@@ -107,36 +113,113 @@ class DrawGuessAdapter:
                     if p.item() > 0.1: self.prediction = self.labels[idx.item()]
         except Exception: pass 
 
-    def draw_ui_overlay(self, img):
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        # Clear Button
-        cv2.rectangle(img, (25, 25), (165, 85), (220, 220, 220), -1) 
-        cv2.rectangle(img, (20, 20), (160, 80), self.c_btn_clear, -1)
-        cv2.putText(img, "CLEAR", (45, 62), font, 0.9, self.c_btn_text, 2)
-        
-        # AI Panel
-        panel_x, panel_y, panel_w, panel_h = 440, 15, 400, 90
-        cv2.rectangle(img, (panel_x, panel_y), (panel_x+panel_w, panel_y+panel_h), self.c_panel_bg, -1)
-        cv2.rectangle(img, (panel_x, panel_y), (panel_x+panel_w, panel_y+panel_h), self.c_panel_border, 2)
-        cv2.putText(img, "AI GUESS:", (panel_x + 20, panel_y + 35), font, 0.6, (150, 150, 150), 1)
-        res_color = (0, 0, 0) if self.model_loaded else (200, 0, 0)
-        text_size = cv2.getTextSize(self.prediction, font, 1.5, 3)[0]
-        text_x = panel_x + (panel_w - text_size[0]) // 2
-        cv2.putText(img, self.prediction, (text_x, panel_y + 75), font, 1.5, res_color, 3)
+    # --- 抽题画面绘制 ---
+    def draw_selection_screen(self, img):
+        # 1. 直接在传入的图片(这里是白板)上加深色遮罩
+        overlay = img.copy()
+        cv2.rectangle(overlay, (0, 0), (self.width, self.height), (20, 20, 30), -1) 
+        alpha = 0.8 # 遮罩稍微深一点，突出中间
+        img = cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
 
-        # Mode Panel
+        # 2. 直接计算中心
+        center_x, center_y = self.width // 2, self.height // 2
+        box_w, box_h = 640, 360 
+        box_x1, box_y1 = center_x - box_w // 2, center_y - box_h // 2
+        box_x2, box_y2 = center_x + box_w // 2, center_y + box_h // 2
+
+        # 3. 绘制弹窗背景
+        shadow_offset = 10
+        cv2.rectangle(img, (box_x1 + shadow_offset, box_y1 + shadow_offset), 
+                      (box_x2 + shadow_offset, box_y2 + shadow_offset), (30, 30, 40), -1)
+        
+        cv2.rectangle(img, (box_x1, box_y1), (box_x2, box_y2), self.c_ui_bg, -1)
+        cv2.rectangle(img, (box_x1, box_y1), (box_x2, box_y2), self.c_ui_border, 6) 
+        cv2.rectangle(img, (box_x1+10, box_y1+10), (box_x2-10, box_y2-10), self.c_ui_border, 2) 
+
+        # 4. 标题
+        title_text = "Choosing Your Topic..."
+        title_font = cv2.FONT_HERSHEY_DUPLEX
+        title_scale = 1.3
+        title_thickness = 2
+        title_size = cv2.getTextSize(title_text, title_font, title_scale, title_thickness)[0]
+        title_x = center_x - title_size[0] // 2
+        title_y = box_y1 + 80 
+        cv2.putText(img, title_text, (title_x, title_y), title_font, title_scale, self.c_text_light, title_thickness)
+
+        # 5. 动态题目
+        elapsed = time.time() - self.selection_start_time
+        remaining = self.selection_duration - elapsed
+
+        if remaining > 0.5:
+            if self.frame_count % 4 == 0:
+                self.current_display_topic = random.choice(self.labels)
+            topic_to_show = self.current_display_topic
+            topic_color = self.c_text_light
+        else:
+            topic_to_show = self.target_topic
+            topic_color = self.c_text_accent 
+
+        topic_font = cv2.FONT_HERSHEY_TRIPLEX
+        topic_scale = 2.8
+        topic_thickness = 4
+        text_size = cv2.getTextSize(topic_to_show.upper(), topic_font, topic_scale, topic_thickness)[0]
+        
+        text_x = center_x - text_size[0] // 2
+        text_y = center_y + text_size[1] // 2 + 20 
+
+        cv2.putText(img, topic_to_show.upper(), (text_x, text_y), topic_font, topic_scale, (0,0,0), topic_thickness+4)
+        cv2.putText(img, topic_to_show.upper(), (text_x, text_y), topic_font, topic_scale, topic_color, topic_thickness)
+
+        return img
+
+    def draw_topic_overlay(self, img):
+        panel_x, panel_y = 20, 100 
+        panel_w, panel_h = 250, 70
+
+        overlay = img.copy()
+        cv2.rectangle(overlay, (panel_x, panel_y), (panel_x + panel_w, panel_y + panel_h), self.c_ui_bg, -1)
+        img = cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
+        cv2.rectangle(img, (panel_x, panel_y), (panel_x + panel_w, panel_y + panel_h), self.c_ui_border, 2)
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(img, "YOUR TOPIC:", (panel_x + 15, panel_y + 25), font, 0.5, (180, 180, 180), 1)
+        cv2.putText(img, self.target_topic.upper(), (panel_x + 15, panel_y + 55), cv2.FONT_HERSHEY_DUPLEX, 0.9, self.c_text_accent, 2)
+        return img
+
+    def draw_ui_overlay(self, img):
+        if self.state != 'PLAYING': return img
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.rectangle(img, (20, 20), (160, 80), self.c_btn_clear, -1)
+        cv2.rectangle(img, (20, 20), (160, 80), self.c_ui_border, 2)
+        cv2.putText(img, "CLEAR", (45, 62), cv2.FONT_HERSHEY_DUPLEX, 0.8, self.c_text_light, 2)
+        
+        panel_x, panel_y, panel_w, panel_h = 440, 15, 400, 90
+        cv2.rectangle(img, (panel_x, panel_y), (panel_x+panel_w, panel_y+panel_h), self.c_ui_bg, -1)
+        cv2.rectangle(img, (panel_x, panel_y), (panel_x+panel_w, panel_y+panel_h), self.c_ui_border, 2)
+        cv2.putText(img, "AI GUESS:", (panel_x + 20, panel_y + 35), font, 0.6, (180, 180, 180), 1)
+        
+        res_color = self.c_text_light if self.model_loaded else (200, 0, 0)
+        if self.prediction.lower() == self.target_topic.lower():
+             res_color = (0, 255, 0)
+
+        text_size = cv2.getTextSize(self.prediction, cv2.FONT_HERSHEY_DUPLEX, 1.3, 3)[0]
+        text_x = panel_x + (panel_w - text_size[0]) // 2
+        cv2.putText(img, self.prediction, (text_x, panel_y + 75), cv2.FONT_HERSHEY_DUPLEX, 1.3, res_color, 3)
+
         mode_x, mode_y, mode_w, mode_h = 900, 25, 300, 70
         cv2.rectangle(img, (mode_x, mode_y), (mode_x+mode_w, mode_y+mode_h), (240, 248, 255), -1) 
         cv2.rectangle(img, (mode_x, mode_y), (mode_x+mode_w, mode_y+mode_h), (176, 224, 230), 2)
         cv2.putText(img, "MODE:", (mode_x + 15, mode_y + 25), font, 0.5, (100, 100, 100), 1)
         
-        status_color = self.c_mode_text
+        status_color = (0, 120, 215)
         if "HOVER" in self.status_text: status_color = (100, 100, 100)
         if "DRAW" in self.status_text: status_color = (0, 180, 0)
         if "ERASER" in self.status_text: status_color = (0, 0, 255)
         if "Protected" in self.status_text: status_color = (255, 0, 0)
         
         cv2.putText(img, self.status_text, (mode_x + 15, mode_y + 55), font, 0.8, status_color, 2)
+        img = self.draw_topic_overlay(img)
         return img
 
     def count_fingers(self, lm):
@@ -153,28 +236,41 @@ class DrawGuessAdapter:
         return total
 
     def process(self, frame):
+        self.frame_count += 1
+        # 无论摄像头是640x480还是其他，统一拉伸到 1280x720
+        # 这样就能保证坐标体系永远是对齐的
+        frame = cv2.resize(frame, (self.width, self.height))
+        # ================= 状态 1：抽题中 =================
+        if self.state == 'SELECTING':
+            if time.time() - self.selection_start_time > self.selection_duration:
+                self.state = 'PLAYING'
+                self.points_queue.clear()
+                self.xp, self.yp = 0, 0
+            
+            # 复制一份 self.canvas (它是白色的) 作为底图
+            white_bg = self.canvas.copy()
+            return self.draw_selection_screen(white_bg)
+
+        # ================= 状态 2：游戏中 (PLAYING) =================
         try:
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.hands.process(img_rgb)
             
             pip_scale = 0.25 
             pip_w, pip_h = int(self.width * pip_scale), int(self.height * pip_scale)
-            frame_small = cv2.resize(frame, (pip_w, pip_h))
             
             if results.multi_hand_landmarks:
                  for hand_landmarks in results.multi_hand_landmarks:
                     self.mp_draw.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
-                 frame_small = cv2.resize(frame, (pip_w, pip_h))
-
+            
+            frame_small = cv2.resize(frame, (pip_w, pip_h))
             self.status_text = "..." 
 
             if results.multi_hand_landmarks:
                 for lm in results.multi_hand_landmarks:
                     pts = lm.landmark
-                    # 食指指尖坐标 (用于绘画/悬停)
                     x1, y1 = int(pts[8].x * self.width), int(pts[8].y * self.height)
                     
-                    # 边缘保护检查
                     is_near_edge = False
                     edge_margin = 40
                     if (x1 < edge_margin or x1 > self.width - edge_margin or 
@@ -182,8 +278,7 @@ class DrawGuessAdapter:
                         is_near_edge = True
 
                     finger_count = self.count_fingers(lm)
-
-                    # 动态平滑处理 (针对食指)
+                    
                     dist_sq = (x1 - self.prev_cx)**2 + (y1 - self.prev_cy)**2
                     if dist_sq < 9: x1, y1 = self.prev_cx, self.prev_cy
                     dist = math.sqrt(dist_sq)
@@ -197,7 +292,6 @@ class DrawGuessAdapter:
                     avg_y = int(sum(p[1] for p in self.points_queue) / len(self.points_queue))
                     cx, cy = avg_x, avg_y
                     self.prev_cx, self.prev_cy = cx, cy
-                    # ---------------------------
 
                     fingers = [
                         1 if pts[4].x < pts[3].x else 0,
@@ -216,13 +310,13 @@ class DrawGuessAdapter:
                             self.xp, self.yp = 0, 0
                         else: self.status_text = "Edge Protected"
 
-                    # B. 移动 (HOVER)
+                    # B. 移动
                     elif fingers[1] == 1 and fingers[2] == 1 and fingers[3] == 0 and fingers[4] == 0:
                         self.xp, self.yp = cx, cy
                         self.status_text = "HOVER"
                         self.points_queue.clear()
 
-                    # C. 画画 (DRAW)
+                    # C. 画画
                     elif fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
                         self.status_text = "DRAWING"     
                         if self.xp == 0 and self.yp == 0: self.xp, self.yp = cx, cy
@@ -235,49 +329,35 @@ class DrawGuessAdapter:
                         cv2.circle(self.canvas, (cx, cy), self.brush_thickness//2, self.c_ink, -1)
                         self.xp, self.yp = cx, cy
                         
-                        if hasattr(self, 'frame_count'): self.frame_count += 1
-                        else: self.frame_count = 0
                         if self.frame_count % 15 == 0: self.predict()
 
-                    # D. 橡皮擦 (ERASER)
+                    # D. 橡皮擦
                     elif finger_count == 0:
                         if not is_near_edge:
                             self.status_text = "ERASER"      
-                            # 获取掌心坐标
                             ex, ey = int(pts[9].x * self.width), int(pts[9].y * self.height)
-                            # ✨ 更新全局橡皮擦坐标用于显示
                             self.eraser_cx, self.eraser_cy = ex, ey
-                            
                             if self.xp == 0 and self.yp == 0: self.xp, self.yp = ex, ey
-                            
-                            # 在画布上执行擦除 (画白线)
                             cv2.line(self.canvas, (self.xp, self.yp), (ex, ey), self.c_eraser, self.eraser_thickness)
                             cv2.circle(self.canvas, (ex, ey), self.eraser_thickness//2, self.c_eraser, -1)
-                            # 移除了这里在小窗口画圈的代码，统一放到后面大窗口画
                             self.xp, self.yp = ex, ey
                         else: self.status_text = "Edge Protected"
-                    
                     else:
                         self.status_text = "Waiting..."
                         self.points_queue.clear()
 
-            # === 最终画面合成 ===
             final_view = self.canvas.copy()
-            
             if results.multi_hand_landmarks:
-                 # 悬停光标 (橙色小圆)
                  if "HOVER" in self.status_text:
-                    cv2.circle(final_view, (self.prev_cx, self.prev_cy), 8, self.c_cursor_hover, 2)
-                 # 只有在橡皮擦模式下才显示
+                    cv2.circle(final_view, (self.prev_cx, self.prev_cy), 8, self.c_text_accent, 2)
                  elif "ERASER" in self.status_text and "Protected" not in self.status_text:
-                    # 画一个空心圆，半径等于橡皮擦的一半
-                    cv2.circle(final_view, (self.eraser_cx, self.eraser_cy), self.eraser_thickness // 2, self.c_cursor_eraser, 3)
-                    # 画一个中心点辅助定位
-                    cv2.circle(final_view, (self.eraser_cx, self.eraser_cy), 4, self.c_cursor_eraser, -1)
+                    cv2.circle(final_view, (self.eraser_cx, self.eraser_cy), self.eraser_thickness // 2, (180, 180, 180), 3)
+                    cv2.circle(final_view, (self.eraser_cx, self.eraser_cy), 4, (180, 180, 180), -1)
 
             final_view = self.draw_ui_overlay(final_view)
+            
             y_off, x_off = self.height - pip_h - 20, self.width - pip_w - 20
-            cv2.rectangle(final_view, (x_off-4, y_off-4), (x_off+pip_w+4, y_off+pip_h+4), (200, 200, 200), -1)
+            cv2.rectangle(final_view, (x_off-4, y_off-4), (x_off+pip_w+4, y_off+pip_h+4), self.c_ui_border, -1)
             final_view[y_off:y_off+pip_h, x_off:x_off+pip_w] = frame_small
             return final_view
 
