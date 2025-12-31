@@ -15,9 +15,13 @@ class MazeGame(BaseGame):
         self.move_interval = 0.5
         
         # 计时器相关
-        self.start_time = time.time()       # 当前关卡开始时间
-        self.global_start_time = 0          # [新增] 整个游戏开始的时间
-        self.final_total_time = 0           # [新增] 通关后的总耗时记录
+        self.start_time = time.time()       
+        self.global_start_time = 0          
+        self.final_total_time = 0           
+        
+        # --- 视觉动画属性 ---
+        self.visual_pos = [0.0, 0.0] 
+        self.trail = [] 
         
         # --- 画面配置 ---
         self.canvas_w, self.canvas_h = 1280, 720
@@ -30,45 +34,45 @@ class MazeGame(BaseGame):
     def start_game(self):
         self.game_state = "PLAYING"
         current_t = time.time()
-        self.start_time = current_t        # 重置当前关卡计时
-        self.global_start_time = current_t # [新增] 记录游戏总开始时间
+        self.start_time = current_t        
+        self.global_start_time = current_t 
 
     def init_level(self):
         """初始化关卡"""
-        # 1. 计算迷宫尺寸
         self.cols = 10 + (self.level // 2)
         self.rows = 8 + (self.level // 2)
         
-        # 2. 生成基础迷宫
+        # 生成迷宫
         raw_maze = self.generate_maze(self.cols, self.rows)
         
-        # 3. 记录起终点
+        # 起终点
         start_x, start_y = 0, 0
         end_x, end_y = self.cols - 1, self.rows - 1
 
-        # 4. 随机水平镜像
+        # 随机镜像
         if random.choice([True, False]):
             raw_maze = np.fliplr(raw_maze)
             start_x = self.cols - 1 - start_x
             end_x = self.cols - 1 - end_x
 
-        # 5. 随机垂直镜像
         if random.choice([True, False]):
             raw_maze = np.flipud(raw_maze)
             start_y = self.rows - 1 - start_y
             end_y = self.rows - 1 - end_y
 
-        # 6. 应用修改
         self.maze = raw_maze
         self.player_pos = [start_x, start_y]
         self.end_pos = [end_x, end_y]
         
-        # 7. 重置状态
+        # 重置视觉坐标与逻辑坐标一致
+        self.visual_pos = [float(start_x), float(start_y)]
+        self.trail = []
+        
         if not hasattr(self, 'game_state'): 
             self.game_state = "INTRO"
         elif self.game_state != "INTRO":
             self.game_state = "PLAYING"
-            self.start_time = time.time() # 仅重置当前关卡计时
+            self.start_time = time.time() 
 
     def generate_maze(self, w, h):
         """DFS 算法生成迷宫"""
@@ -157,36 +161,52 @@ class MazeGame(BaseGame):
                 command = self.detect_gesture(hand_landmarks)
 
         current_time = time.time()
-
-        # --- 这是作弊触发区域 方便测试 ---
-        # if self.game_state == "PLAYING" and (current_time - self.start_time) % 3 >= 2:
-        #     cv2.putText(canvas, "DEBUG: SKIP!", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-        #     self.player_pos = list(self.end_pos) # 瞬移到终点
         
-        # --- 游戏逻辑更新 ---
-        if self.game_state == "PLAYING":
-            if current_time - self.last_move_time > self.move_interval and command != "NONE":
-                px, py = self.player_pos
-                new_x, new_y = px, py
-                if command == "UP": new_y -= 1
-                elif command == "DOWN": new_y += 1
-                elif command == "LEFT": new_x -= 1
-                elif command == "RIGHT": new_x += 1
-                
-                if 0 <= new_x < self.cols and 0 <= new_y < self.rows:
-                    if self.maze[new_y, new_x] == 1:
-                        self.player_pos = [new_x, new_y]
-                        self.last_move_time = current_time
-
-            if self.player_pos == self.end_pos:
+        # --- 胜利检测前置 ---
+        # 确保玩家看到圆圈滑入终点后再触发胜利
+        if self.game_state == "PLAYING" and self.player_pos == self.end_pos:
+            dx = self.visual_pos[0] - self.player_pos[0]
+            dy = self.visual_pos[1] - self.player_pos[1]
+            dist = (dx**2 + dy**2)**0.5
+            
+            if dist < 0.1: # 动画播放完毕
                 self.level += 1
                 if self.level > self.max_levels:
                     self.level -= 1
                     self.game_state = "ALL_CLEARED"
-                    # 胜利瞬间，计算总耗时并锁定
                     self.final_total_time = current_time - self.global_start_time
                 else:
                     self.init_level()
+
+        # --- 游戏逻辑更新 ---
+        if self.game_state == "PLAYING":
+            # 只有未到达终点逻辑坐标时才移动
+            if self.player_pos != self.end_pos:
+                if current_time - self.last_move_time > self.move_interval and command != "NONE":
+                    px, py = self.player_pos
+                    new_x, new_y = px, py
+                    if command == "UP": new_y -= 1
+                    elif command == "DOWN": new_y += 1
+                    elif command == "LEFT": new_x -= 1
+                    elif command == "RIGHT": new_x += 1
+                    
+                    if 0 <= new_x < self.cols and 0 <= new_y < self.rows:
+                        if self.maze[new_y, new_x] == 1:
+                            self.player_pos = [new_x, new_y]
+                            self.last_move_time = current_time
+
+        # --- 视觉动画插值 ---
+        target_x, target_y = self.player_pos
+        self.visual_pos[0] += (target_x - self.visual_pos[0]) * 0.2
+        self.visual_pos[1] += (target_y - self.visual_pos[1]) * 0.2
+        
+        if abs(self.visual_pos[0] - target_x) < 0.01: self.visual_pos[0] = float(target_x)
+        if abs(self.visual_pos[1] - target_y) < 0.01: self.visual_pos[1] = float(target_y)
+
+        # --- 更新残影队列 ---
+        self.trail.append(tuple(self.visual_pos))
+        if len(self.trail) > 8:
+            self.trail.pop(0)
 
         # --- 绘图部分 ---
 
@@ -199,6 +219,7 @@ class MazeGame(BaseGame):
         offset_x = padding + (available_w - self.cols * cell_size) // 2
         offset_y = padding + (available_h - self.rows * cell_size) // 2
 
+        # 迷宫
         for r in range(self.rows):
             for c in range(self.cols):
                 x1 = offset_x + c * cell_size
@@ -220,19 +241,40 @@ class MazeGame(BaseGame):
         cv2.circle(canvas, (cx, cy), cell_size // 3, (0, 0, 200), -1)
         cv2.circle(canvas, (cx, cy), cell_size // 5, (0, 0, 255), -1)
 
-        # 玩家
-        px, py = self.player_pos
-        pcx = offset_x + px * cell_size + cell_size // 2
-        pcy = offset_y + py * cell_size + cell_size // 2
+        # --- [修改] 绘制清爽的残影 ---
+        # 不再使用全屏 addWeighted，而是直接画圆，防止画面变灰变糊
+        # 且最大半径限制为角色的一样大 (cell_size // 3)，避免“臃肿”
+        for i, (tx, ty) in enumerate(self.trail):
+            tcx = int(offset_x + tx * cell_size + cell_size // 2)
+            tcy = int(offset_y + ty * cell_size + cell_size // 2)
+            
+            progress = (i + 1) / len(self.trail) 
+            # 半径从0渐变到接近角色大小，但不超过角色
+            radius = int((cell_size // 3.2) * progress) 
+            
+            # 颜色：深绿 -> 亮绿，模拟能量衰减
+            # 头部 alpha 高，尾部 alpha 低
+            color = (0, int(200 * progress), 0)
+            cv2.circle(canvas, (tcx, tcy), radius, color, -1)
+
+        # --- [修改] 绘制角色本体 ---
+        vpx, vpy = self.visual_pos
+        pcx = int(offset_x + vpx * cell_size + cell_size // 2)
+        pcy = int(offset_y + vpy * cell_size + cell_size // 2)
+        
+        # 外圈光环
         cv2.circle(canvas, (pcx, pcy), cell_size // 3, (0, 255, 0), -1)
-        cv2.circle(canvas, (pcx, pcy), cell_size // 3 + 2, (255, 255, 255), 2)
+        # 内圈高光（白色核心），增加科技感
+        cv2.circle(canvas, (pcx, pcy), cell_size // 6, (200, 255, 200), -1)
+        # 描边
+        cv2.circle(canvas, (pcx, pcy), cell_size // 3 + 1, (255, 255, 255), 1)
 
         # B. 绘制右侧侧边栏
         sidebar_x = self.maze_area_w
         cv2.rectangle(canvas, (sidebar_x, 0), (self.canvas_w, self.canvas_h), (20, 20, 20), -1)
         cv2.line(canvas, (sidebar_x, 0), (sidebar_x, self.canvas_h), (100, 100, 100), 2)
 
-        # 摄像头画面
+        # 摄像头
         cam_w = self.sidebar_w - 20
         cam_h = int(cam_w * 0.75) 
         cam_resized = cv2.resize(frame, (cam_w, cam_h))
@@ -251,13 +293,10 @@ class MazeGame(BaseGame):
         cv2.putText(canvas, f"LEVEL: {self.level}/{self.max_levels}", 
                     (sidebar_x + 20, text_y), font, 0.8, (255, 255, 255), 1)
         
-        # 计时显示逻辑：如果是胜利状态，不再更新时间，或者显示总时间
         if self.game_state == "ALL_CLEARED":
-            # 胜利后，侧边栏显示总耗时
             time_text = f"TOTAL: {int(self.final_total_time)}s"
-            time_color = (0, 255, 255) # 金色
+            time_color = (0, 255, 255) 
         else:
-            # 游戏中，显示当前关卡耗时
             elapsed = int(current_time - self.start_time)
             time_text = f"TIME: {elapsed}s"
             time_color = (200, 200, 200)
@@ -275,11 +314,8 @@ class MazeGame(BaseGame):
             overlay = canvas.copy()
             cv2.rectangle(overlay, (0, 0), (self.canvas_w, self.canvas_h), (0, 0, 0), -1)
             cv2.addWeighted(overlay, 0.7, canvas, 0.3, 0, canvas)
-            
-            # 胜利标题
             cv2.putText(canvas, "VICTORY!", (self.canvas_w//2 - 200, self.canvas_h//2 - 50), 
                         font, 3, (0, 215, 255), 5)
-            # 总耗时显示
             time_str = f"Total Time: {self.final_total_time:.1f} s"
             cv2.putText(canvas, time_str, (self.canvas_w//2 - 220, self.canvas_h//2 + 50), 
                         font, 1.5, (255, 255, 255), 2)

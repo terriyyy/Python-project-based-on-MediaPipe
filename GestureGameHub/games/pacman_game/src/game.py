@@ -126,6 +126,7 @@ class Game:
                 if self.lives <= 0:
                     self.game_over = True
                     return
+                # 立即重置位置
                 self._reset_positions()
                 self.safe_left = RESPAWN_SAFE_TIME
 
@@ -133,10 +134,20 @@ class Game:
             self.game_over = True
 
     def _reset_positions(self) -> None:
-        level = load_level_txt("src/map/levels/level_01.txt")
+        """ 重置吃豆人和幽灵的位置 """
+        # 使用基于文件位置的相对路径
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        level_path = os.path.join(current_dir, "map", "levels", "level_01.txt")
+        level = load_level_txt(level_path)
+        
+        # 重置吃豆人位置
         self.pacman.reset(level.pacman_spawn_px)
+        
+        # 重置每个幽灵的位置（使用它们原始的spawn点）
         for g in self.ghosts:
             g.reset()
+        
+        # 清除惊吓模式
         self.mode.clear_frightened()
 
     def draw(self, screen: pygame.Surface) -> None:
