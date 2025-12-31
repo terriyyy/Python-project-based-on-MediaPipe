@@ -30,19 +30,34 @@ def loop(cam,lower_red,upper_red,height,width):
     
 def main(pos):
     cam = WebcamVideoStream(src=0).start()
-
-    frame = cam.read()
-    imgInfo = frame.shape
-    height = imgInfo[0]
-    width = imgInfo[1]
-    
-    lower_red=np.array([120,100,100])
-    upper_red=np.array([180,255,255])
-    while(1):
-        x,y,stop=loop(cam,lower_red,upper_red,height,width)
-        pos[0]=[x,y]
-        if stop:
-            break
+    try:
+        frame = cam.read()
+        if frame is None:  # 先检查摄像头可用性
+            raise Exception("摄像头读取失败")
+        
+        imgInfo = frame.shape
+        height = imgInfo[0]
+        width = imgInfo[1]
+        
+        lower_red = np.array([120,100,100])
+        upper_red = np.array([180,255,255])
+        
+        # 增加超时机制，避免死循环
+        import time
+        start_time = time.time()
+        timeout = 300  # 5分钟超时（可调整）
+        while True:
+            if time.time() - start_time > timeout:
+                break  # 超时自动退出
+            x, y, stop = loop(cam, lower_red, upper_red, height, width)
+            pos[0] = [x, y]
+            if stop:
+                break
+    finally:
+        # 强制释放摄像头资源
+        cam.stop()
+        cam.stream.release()  # 释放 OpenCV 视频流
+        cv2.destroyAllWindows()  # 清理 OpenCV 窗口
         
 
 if __name__ == '__main__':

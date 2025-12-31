@@ -1,0 +1,1 @@
+from .parkour_adapter import ParkourGame

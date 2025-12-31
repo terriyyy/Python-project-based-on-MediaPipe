@@ -117,3 +117,26 @@ def video_feed():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+def cleanup_all_resources(current_game=None):
+    """全局资源清理：切换/退出游戏时调用"""
+    # 1. 清理 Pygame 资源
+    import pygame
+    if pygame.get_init():
+        pygame.quit()
+    
+    # 2. 清理 OpenCV/MediaPipe 资源
+    import cv2
+    cv2.destroyAllWindows()
+    
+    # 3. 清理游戏特定资源
+    if current_game:
+        # 释放摄像头
+        if hasattr(current_game, 'cam'):
+            current_game.cam.stop()
+        # 释放模型
+        if hasattr(current_game, 'model'):
+            del current_game.model
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()

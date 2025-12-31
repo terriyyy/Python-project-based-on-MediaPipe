@@ -61,22 +61,27 @@ class PacmanGameAdapter(BaseGame):
         self.game_state = "PLAYING"
     
     def restart_game(self):
-        """重启游戏，重新创建游戏实例"""
-        # 保存当前工作目录
+        """重启游戏，释放旧资源并重新创建实例"""
+        # 1. 释放旧游戏的 Pygame 资源
+        if hasattr(self, 'pacman_game'):
+            pygame.event.clear()  # 清空事件队列
+            if hasattr(self, 'game_surface'):
+                self.game_surface = None  # 让垃圾回收器回收 Surface
+            pygame.display.quit()  # 释放显示资源
+            pygame.display.init()   # 重新初始化显示
+        
+        # 2. 原有重启逻辑（保留，增加异常处理）
         original_cwd = os.getcwd()
         pacman_game_dir = os.path.join(os.path.dirname(__file__), 'pacman_game')
         os.chdir(pacman_game_dir)
         try:
-            # 重新创建游戏实例
             self.pacman_game = PacmanGame()
-            # 重新创建 surface
             self.game_surface = pygame.Surface((self.pacman_game.width, self.pacman_game.height))
         finally:
-            # 恢复原工作目录
             os.chdir(original_cwd)
         
-        # 重置状态
-        self.game_over_timer = 0
+        # 3. 强制重置所有计时/状态变量（避免残留）
+        self.game_over_timer = 0.0
         self.last_command = "NONE"
         self.command_cooldown = 0.0
         self.game_state = "PLAYING"

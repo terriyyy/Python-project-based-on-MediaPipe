@@ -365,3 +365,17 @@ class DrawGuessAdapter:
             print(f"绘画处理出错: {e}")
             traceback.print_exc()
             return frame
+
+    def __del__(self):
+        """析构函数：退出时释放所有资源"""
+        # 关闭 MediaPipe Hands
+        if hasattr(self, 'hands'):
+            self.hands.close()
+        # 释放 PyTorch 模型（清理 GPU/内存）
+        if hasattr(self, 'model') and self.model_loaded:
+            del self.model
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # 清理 GPU 缓存
+        # 清理 OpenCV 窗口
+        cv2.destroyAllWindows()
