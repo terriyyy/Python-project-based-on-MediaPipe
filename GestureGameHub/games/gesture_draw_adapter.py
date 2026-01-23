@@ -188,6 +188,34 @@ class GestureDrawAdapter:
                 break
         return added
 
+    def _check_and_mark_guides_point(self, point):
+        """Check proximity using only the current fingertip point (px,py).
+        This ignores the historical stroke path and marks guide points when
+        the fingertip is near the next guide point(s)."""
+        if 'guide_points' not in self.target or len(self.target['guide_points']) == 0:
+            return 0
+        if point is None:
+            return 0
+        px, py = point
+        added = 0
+        gp = np.array(self.target['guide_points'], dtype=float)
+        # Allow detection for the next few points (to prevent quick skipping)
+        max_check = 2
+        for attempt in range(max_check):
+            idx = self.next_guide_idx
+            if idx >= len(gp):
+                break
+            gx, gy = gp[idx]
+            d = math.hypot(px - gx, py - gy)
+            thresh = max(30.0, self.target['size'] * 0.25)
+            if d <= thresh:
+                self.guide_hit_flags[idx] = True
+                self.next_guide_idx += 1
+                added += 1
+            else:
+                break
+        return added
+
     def draw_overlay(self, frame):
         overlay = frame.copy()
         pts = self.target['points']
@@ -269,9 +297,12 @@ class GestureDrawAdapter:
 
                 # draw mode: index up, middle down
                 if index_up and not middle_up:
+                    # Only consider the current fingertip location for guide hit detection.
+                    # Do still append to current_stroke for visual feedback / scoring, but
+                    # guide detection will use the fingertip alone (ignore previous path).
                     self.current_stroke.append((ix, iy))
-                    # 检查是否命中下一关键点（在绘制过程中）
-                    self._check_and_mark_guides(self.current_stroke)
+                    # 检查是否命中下一关键点（仅检测当前食指尖）
+                    self._check_and_mark_guides_point((ix, iy))
                 else:
                     # finish stroke
                     if len(self.current_stroke) > 5:

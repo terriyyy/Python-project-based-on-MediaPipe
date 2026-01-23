@@ -21,6 +21,7 @@
         </div>
         <div class="controls">
             <button id="start-btn" class="btn btn-success">Start</button>
+            <button id="restart-btn" class="btn btn-primary">Restart</button>
         </div>
     </div>
 
@@ -36,6 +37,20 @@ document.getElementById('start-btn').addEventListener('click', async function(){
             alert('Failed to start: ' + JSON.stringify(j));
         }
     } catch(e){ alert('Failed to start: ' + e); }
+});
+
+document.getElementById('restart-btn').addEventListener('click', async function(){
+    try{
+        const res = await fetch('/api/start_game', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({game_name:'fingertip_catch'})});
+        const j = await res.json();
+        if(j.status === 'started'){
+            // visual feedback briefly
+            this.innerText = 'Restarted';
+            setTimeout(()=>{ this.innerText = 'Restart'; }, 1000);
+        } else {
+            alert('Failed to restart: ' + JSON.stringify(j));
+        }
+    } catch(e){ alert('Failed to restart: ' + e); }
 });
 </script>
 </body>

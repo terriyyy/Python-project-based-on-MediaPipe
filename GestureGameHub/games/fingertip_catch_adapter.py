@@ -30,10 +30,35 @@ class FingertipCatchAdapter:
         # stars list
         self.stars = []  # each star: dict x,y,vy,size,alive
         self.max_stars = 1
+        self.max_stars_cap = 12
+        # spawn control
+        self.last_spawn_time = 0.0
+        self.spawn_interval = 1.0  # seconds between spawns (will reduce with difficulty)
+
+        # restart button control (for END state)
+        self.last_restart_touch_time = 0.0
+        self.restart_cooldown = 1.0  # seconds to avoid immediate double-restart
+        self.restart_btn_w = int(self.width * 0.28)
+        self.restart_btn_h = 64
 
         # visuals
+        # create a vertical gradient background and some faint static background stars
         self.bg = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        self.bg[:] = (20, 24, 30)
+        top_color = np.array((12, 18, 30), dtype=np.uint8)
+        bottom_color = np.array((35, 55, 90), dtype=np.uint8)
+        for y in range(self.height):
+            t = y / max(1, (self.height-1))
+            col = (top_color * (1-t) + bottom_color * t).astype(np.uint8)
+            self.bg[y, :, :] = col
+        # ambient tiny stars (positions and brightness)
+        self.bg_stars = []
+        for i in range(120):
+            sx = random.randint(0, self.width-1)
+            sy = random.randint(0, self.height-1)
+            b = random.randint(10, 40)
+            self.bg_stars.append((sx, sy, b))
+        for sx, sy, b in self.bg_stars:
+            cv2.circle(self.bg, (sx, sy), 1, (b, b, b), -1)
 
     def start_game(self):
         self.state = 'PLAYING'
@@ -48,9 +73,16 @@ class FingertipCatchAdapter:
     def _spawn_star(self):
         # spawn a single star at a random x near top
         size = random.randint(24, 40)
-        x = random.randint(size + 10, self.width - size - 10)
+        # spawn nearer to center horizontally because edges may not detect the hand well
+        x_min = int(self.width * 0.15) + size + 10
+        x_max = int(self.width * 0.85) - size - 10
+        x = random.randint(max(size + 10, x_min), min(self.width - size - 10, x_max))
         y = -size - random.randint(0, 100)
-        vy = self.base_speed + random.random() * 1.2 + (self.score // 50) * 0.5
+        # factor in elapsed time and score to make falling speed gradually increase
+        elapsed = 0.0 if not self.start_time else (time.time() - self.start_time)
+        time_speed = (elapsed // 15) * 0.35  # small speed bump every 15s
+        score_speed = (self.score // 50) * 0.5
+        vy = self.base_speed + random.random() * 1.2 + score_speed + time_speed
         self.stars.append({'x': float(x), 'y': float(y), 'vy': float(vy), 'size': int(size), 'alive': True})
 
     def _draw_star(self, img, cx, cy, r, color=(0,200,255)):
@@ -70,8 +102,8 @@ class FingertipCatchAdapter:
             frame = cv2.resize(frame, (self.width, self.height))
             view = frame.copy()
 
-            if self.state != 'PLAYING':
-                # onboarding screen
+            # If waiting for start, show onboarding and return early (no hand processing)
+            if self.state == 'WAIT':
                 tmp = self.bg.copy()
                 cv2.putText(tmp, "Fingertip Catch Stars", (self.width//2 - 300, self.height//2 - 40), cv2.FONT_HERSHEY_DUPLEX, 2.0, (200,200,220), 3)
                 cv2.putText(tmp, "Press Start to begin. Use your index fingertip to catch falling stars.", (80, self.height//2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (180,180,200), 2)
@@ -81,21 +113,28 @@ class FingertipCatchAdapter:
                 tmp[20:20+ph, 20:20+pw] = pip
                 return tmp
 
-            # process hands
+            # process hands for both PLAYING and END states (so we can detect restart touches)
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.hands.process(img_rgb)
 
             # default fingertip position center bottom
             fx, fy = self.width//2, int(self.height*0.75)
             hand_present = False
-
-            if results.multi_hand_landmarks:
+            index_up = False
+            middle_up = False
+            lm = None
+            if results and getattr(results, 'multi_hand_landmarks', None):
                 hand_present = True
-                for lm in results.multi_hand_landmarks:
-                    self.mp_draw.draw_landmarks(view, lm, self.mp_hands.HAND_CONNECTIONS)
+                for lm_ in results.multi_hand_landmarks:
+                    self.mp_draw.draw_landmarks(view, lm_, self.mp_hands.HAND_CONNECTIONS)
                 lm = results.multi_hand_landmarks[0]
                 fx = int(lm.landmark[8].x * self.width)
                 fy = int(lm.landmark[8].y * self.height)
+                # simple up detection used elsewhere
+                def is_up(tip, pip):
+                    return lm.landmark[tip].y < lm.landmark[pip].y
+                index_up = is_up(8,6)
+                middle_up = is_up(12,10)
                 cv2.circle(view, (fx, fy), 10, (0,255,0), -1)
 
             # update stars
@@ -125,11 +164,23 @@ class FingertipCatchAdapter:
 
             # remove dead and spawn to maintain up to max_stars
             self.stars = [s for s in self.stars if s['alive']]
-            while len(self.stars) < self.max_stars:
+            # dynamically adjust difficulty: increase max stars over time and score
+            elapsed = 0.0 if not self.start_time else (time.time() - self.start_time)
+            time_factor = int(elapsed // 10)  # every 10s allow one more star
+            score_factor = int(self.score // 30)  # every 30 points add a star
+            target_max = min(self.max_stars_cap, 1 + time_factor + score_factor)
+            self.max_stars = max(1, target_max)
+            # spawn interval shortens as level/score increases
+            self.spawn_interval = max(0.25, 1.0 - min(0.7, (self.score // 50) * 0.08 + (time_factor * 0.02)))
+            # spawn gradually based on spawn_interval
+            now = time.time()
+            while len(self.stars) < self.max_stars and (now - self.last_spawn_time) >= self.spawn_interval:
                 self._spawn_star()
+                self.last_spawn_time = now
+                now = time.time()
 
-            # draw stars
-            overlay = view.copy()
+            # draw onto gradient background, then blend camera view faintly
+            overlay = self.bg.copy()
             for s in self.stars:
                 self._draw_star(overlay, int(s['x']), int(s['y']), s['size'], color=(0,220,220))
 
@@ -144,13 +195,42 @@ class FingertipCatchAdapter:
             overlay[self.height-ph-20:self.height-20, 20:20+pw] = pip
 
             # composite
-            final = cv2.addWeighted(overlay, 0.85, view, 0.15, 0)
+            final = cv2.addWeighted(overlay, 0.9, view, 0.1, 0)
 
-            if self.lives <= 0:
-                # Game Over
-                cv2.rectangle(final, (0,0), (self.width, self.height), (10,10,10), -1)
-                cv2.putText(final, f"Game Over - Score: {self.score}", (self.width//2 - 350, self.height//2), cv2.FONT_HERSHEY_DUPLEX, 2.0, (240,240,240), 3)
+            # If lives exhausted, set END state and show overlay + restart button
+            if self.lives <= 0 and self.state != 'END':
                 self.state = 'END'
+
+            if self.state == 'END':
+                # dark overlay and big score
+                cv2.rectangle(final, (0,0), (self.width, self.height), (10,10,10), -1)
+                cv2.putText(final, f"Game Over", (self.width//2 - 180, self.height//2 - 40), cv2.FONT_HERSHEY_DUPLEX, 2.0, (240,240,240), 3)
+                cv2.putText(final, f"Score: {self.score}", (self.width//2 - 150, self.height//2 + 20), cv2.FONT_HERSHEY_DUPLEX, 1.6, (240,240,240), 3)
+                # draw restart button near bottom center
+                btn_w = self.restart_btn_w
+                btn_h = self.restart_btn_h
+                btn_x = (self.width - btn_w) // 2
+                btn_y = self.height - btn_h - 24
+                cv2.rectangle(final, (btn_x, btn_y), (btn_x + btn_w, btn_y + btn_h), (40,120,200), -1)
+                cv2.putText(final, "RESTART", (btn_x + 30, btn_y + btn_h//2 + 10), cv2.FONT_HERSHEY_DUPLEX, 1.2, (230,230,230), 2)
+
+                # detect fingertip touching the restart button
+                try:
+                    if hand_present and lm is not None:
+                        # check fingertip coordinates (accept any fingertip presence over button)
+                        over_btn = (btn_x <= fx <= btn_x + btn_w and btn_y <= fy <= btn_y + btn_h)
+                        # visual feedback: highlight button when fingertip is over it
+                        if over_btn:
+                            cv2.rectangle(final, (btn_x, btn_y), (btn_x + btn_w, btn_y + btn_h), (80,160,240), -1)
+                            cv2.putText(final, "RESTART", (btn_x + 30, btn_y + btn_h//2 + 10), cv2.FONT_HERSHEY_DUPLEX, 1.2, (255,255,255), 2)
+                            cv2.circle(final, (fx, fy), 12, (255,220,100), -1)
+                        now = time.time()
+                        if over_btn and (now - self.last_restart_touch_time > self.restart_cooldown):
+                            # restart the game
+                            self.start_game()
+                            self.last_restart_touch_time = now
+                except Exception:
+                    pass
 
             return final
         except Exception as e:
