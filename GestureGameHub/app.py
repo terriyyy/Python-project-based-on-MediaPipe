@@ -25,6 +25,12 @@ def get_game_instance(game_name):
     elif game_name == 'draw_guess':
         from games.draw_guess_adapter import DrawGuessAdapter
         return DrawGuessAdapter()      
+    elif game_name == 'gesture_draw':
+        from games.gesture_draw_adapter import GestureDrawAdapter
+        return GestureDrawAdapter()
+    elif game_name == 'fingertip_catch':
+        from games.fingertip_catch_adapter import FingertipCatchAdapter
+        return FingertipCatchAdapter()
     return None
 
 # 当前运行的游戏实例
@@ -43,6 +49,13 @@ def draw_guess_page():
     current_game = DrawGuessAdapter()
     return render_template('draw_guess.html')
 
+@app.route('/gesture_draw')
+def gesture_draw_page():
+    global current_game
+    from games.gesture_draw_adapter import GestureDrawAdapter
+    current_game = GestureDrawAdapter()
+    return render_template('gesture_draw.html')
+
 # 你画我猜专属视频流 (为了匹配 draw_guess.html 的 img src)
 @app.route('/video_feed_draw')
 def video_feed_draw():
@@ -51,10 +64,46 @@ def video_feed_draw():
 @app.route('/api/start_game', methods=['POST'])
 def start_game_api():
     global current_game
+    data = request.get_json(silent=True) or {}
+    game_name = data.get('game_name')
+    # if no current_game, try to create one from provided game_name
+    if current_game is None and game_name:
+        inst = get_game_instance(game_name)
+        if inst:
+            # set as current game
+            globals()['current_game'] = inst
     if current_game and hasattr(current_game, 'start_game'):
-        current_game.start_game()
-        return jsonify({"status": "started"})
-    return jsonify({"status": "error"}), 400
+        try:
+            current_game.start_game()
+            return jsonify({"status": "started"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "error", "message": "no game instance"}), 400
+
+@app.route('/api/clear_canvas', methods=['POST'])
+def clear_canvas_api():
+    global current_game
+    data = request.get_json(silent=True) or {}
+    game_name = data.get('game_name')
+    if current_game is None and game_name:
+        inst = get_game_instance(game_name)
+        if inst:
+            globals()['current_game'] = inst
+    if current_game:
+        if hasattr(current_game, 'canvas'):
+            try:
+                current_game.canvas[:] = 255
+                if hasattr(current_game, 'strokes'):
+                    current_game.strokes = []
+                if hasattr(current_game, 'current_stroke'):
+                    current_game.current_stroke = []
+                # reset guide flags if any
+                if hasattr(current_game, 'guide_hit_flags'):
+                    current_game.guide_hit_flags = [False] * len(getattr(current_game, 'target', {}).get('guide_points', []))
+                return jsonify({"status": "ok"})
+            except Exception as e:
+                return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "error", "message": "no game instance"}), 400
 
 @app.route('/play/<game_name>')
 def play(game_name):
@@ -78,12 +127,29 @@ def play(game_name):
         return render_template('street_fighter.html')
     elif game_name == 'draw_guess':
         return render_template('draw_guess.html')
+    elif game_name == 'gesture_draw':
+        return render_template('gesture_draw.html')
+    elif game_name == 'fingertip_catch':
+        return render_template('fingertip_catch.html')
     # 默认回退到通用模板
     return render_template('game.html', game_name=game_name)
 
 def gen_frames():
     """视频流生成器"""
     global current_game
+    # If the incoming video feed request specifies a game_name, ensure the generator
+    # creates/attaches the correct game instance in this request context. This
+    # avoids cases where the front-end img src triggers the video feed in a
+    # different worker/process without a current_game set.
+    try:
+        from flask import request as _req
+        game_name_q = _req.args.get('game_name')
+        if current_game is None and game_name_q:
+            inst = get_game_instance(game_name_q)
+            if inst:
+                globals()['current_game'] = inst
+    except Exception:
+        pass
     # 打开摄像头
     cap = cv2.VideoCapture(0)
     
