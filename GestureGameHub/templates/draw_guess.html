@@ -66,16 +66,17 @@
         .instructions {
             margin-top: 25px;
             background: white;
-            padding: 12px 40px; /*稍微加宽一点*/
+            padding: 12px 40px;
             border-radius: 50px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
             display: flex;
-            gap: 25px; /* 间距拉大 */
+            gap: 25px;
             color: #666;
             font-weight: 600;
             align-items: center;
-            flex-wrap: wrap; /* 防止屏幕太窄时换行 */
+            flex-wrap: wrap; /* 关键：屏幕窄时自动换行 */
             justify-content: center;
+            max-width: 90%; /* 防止在大屏上太宽 */
         }
 
         .key-point {
@@ -84,6 +85,13 @@
             margin-right: 5px;
         }
         
+        /* 针对按钮功能的特殊颜色，区分于手势 */
+        .btn-instruction {
+            color: #007bff; /* 蓝色，对应UI按钮的感觉 */
+            font-weight: 800;
+            margin-right: 5px;
+        }
+
         .divider {
             color: #e0e0e0;
             font-weight: 300;
@@ -103,7 +111,7 @@
         </div>
 
         <div class="instructions">
-            <span><span class="key-point">☝️ 食指</span> 绘画(注意：食指尽量竖直与屏幕平行)</span>
+            <span><span class="key-point">☝️ 食指</span> 绘画</span>
             <span class="divider">|</span>
             
             <span><span class="key-point">✌️ V字</span> 移动光标</span>
@@ -112,7 +120,14 @@
             <span><span class="key-point">✊ 握拳</span> 橡皮擦</span>
             <span class="divider">|</span>
             
-            <span><span class="key-point">🖐️ 张开手掌</span> 清空白板</span>
+            <span><span class="key-point">🖐️ 张开手掌</span> 重置游戏</span>
+            
+            <span class="divider">|</span>
+
+            <span><span class="btn-instruction">☝️ 移至 CLEAR</span> 清空画布</span>
+            <span class="divider">|</span>
+            
+            <span><span class="btn-instruction">☝️ 移至 SKIP</span> 跳过本题</span>
         </div>
     </div>
 
